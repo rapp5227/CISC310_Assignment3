@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 }
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
-{
+{//TODO start on writing this
     // Work to be done by each core idependent of the other cores
     //  - Get process at front of ready queue
     //  - Simulate the processes running until one of the following:
