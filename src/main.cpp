@@ -40,6 +40,7 @@ int main(int argc, char **argv)
     int i;
     SchedulerData *shared_data;
     std::vector<Process*> processes;
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
 
     // read configuration file for scheduling simulation
     SchedulerConfig *config = readConfigFile(argv[1]);
@@ -76,24 +77,44 @@ int main(int argc, char **argv)
 
     // main thread work goes here:
     int num_lines = 0;
+
     while (!(shared_data->all_terminated))
     {
         // clear output from previous iteration
         clearOutput(num_lines);
 
         // start new processes at their appropriate start time
+        uint32_t elapsedTime = currentTime() - start;
+
+        for(size_t i = 0;i < processes.size();i++)
+        {
+            if(processes[i]->getStartTime() <= elapsedTime && processes[i]->getState() == Process::NotStarted)
+            {
+                lock.lock();
+                    shared_data->ready_queue.push_back(processes[i]);
+                lock.unlock();
+            }
+        }
 
         // determine when an I/O burst finishes and put the process back in the ready queue
 
         // sort the ready queue (if needed - based on scheduling algorithm)
 
         // determine if all processes are in the terminated state
+        lock.lock();    //TODO there's an error here somewhere
+            shared_data->all_terminated = true;
 
+            for(size_t i = 0;i < processes.size();i++)
+                if(processes[i]->getState() != Process::Terminated)
+                    shared_data->all_terminated = false;
+        lock.unlock();
         // output process status table
         num_lines = printProcessOutput(processes, shared_data->mutex);
 
         // sleep 1/60th of a second
         usleep(16667);
+
+        std::cout << "loop end\n";
     }
 
 

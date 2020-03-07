@@ -112,14 +112,13 @@ void Process::updateBurstTime(int burst_idx, uint32_t new_time)
 // SJF - comparator for sorting read queue based on shortest remaining CPU time
 bool SjfComparator::operator ()(const Process *p1, const Process *p2)
 {
-    //TODO chase is writing this
-    // your code here!
+
     return false; // change this!
 }
 
 // PP - comparator for sorting read queue based on priority
-bool PpComparator::operator ()(const Process *p1, const Process *p2)
+bool PpComparator::operator ()(const Process* p1, const Process* p2)
 {
-    // your code here!
+
     return false; // change this!
 }
