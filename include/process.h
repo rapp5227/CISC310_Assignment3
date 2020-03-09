@@ -29,15 +29,15 @@ public:
     Process(ProcessDetails details, uint32_t current_time);
     ~Process();
 
-    uint16_t getPid();
-    uint32_t getStartTime();
-    uint8_t getPriority();
-    State getState();
-    int8_t getCpuCore();
-    double getTurnaroundTime();
-    double getWaitTime();
-    double getCpuTime();
-    double getRemainingTime();
+    uint16_t getPid() const;
+    uint32_t getStartTime() const;
+    uint8_t getPriority() const;
+    State getState() const;
+    int8_t getCpuCore() const;
+    double getTurnaroundTime() const;
+    double getWaitTime() const;
+    double getCpuTime() const;
+    double getRemainingTime() const;
 
     void setState(State new_state, uint32_t current_time);
     void setCpuCore(int8_t core_num);
