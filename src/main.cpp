@@ -42,10 +42,7 @@ int main(int argc, char **argv)
     SchedulerData *shared_data;
     std::vector<Process*> processes;
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
-    std::cout << "lock owns mutex: " << lock.owns_lock() << std::endl;
-    lock.try_lock();
-    std::cout << "lock owns mutex: " << lock.owns_lock() << std::endl;
-    lock.unlock();
+
     // read configuration file for scheduling simulation
     SchedulerConfig *config = readConfigFile(argv[1]);
 
@@ -94,6 +91,7 @@ int main(int argc, char **argv)
         {
             if(processes[i]->getStartTime() <= elapsedTime && processes[i]->getState() == Process::NotStarted)
             {
+                std::cout << "lock test: " << lock.owns_lock() << std::endl;
                 lock.lock();
                     std::cout << "entered lock\n";
                     shared_data->ready_queue.push_back(processes[i]);   //starts processes that haven't been started
@@ -106,11 +104,13 @@ int main(int argc, char **argv)
         std::cout << "io queue iterator" << std::endl;
 
         // determine when an I/O burst finishes and put the process back in the ready queue
+
         // lock.lock();
             std::cout << "entered lock" << std::endl;
             for(std::list<Process*>::iterator it = shared_data->io_queue.begin(); it != shared_data->io_queue.end();++it)
             {
                 //test whether element is done with IO and move to ready if so
+                //change process state
             }
         // lock.unlock();
 
@@ -120,21 +120,24 @@ int main(int argc, char **argv)
         if(shared_data->algorithm == ScheduleAlgorithm::PP)
         {
             std::cout << "priority scheduling" << std::endl;
-            lock.lock();
-                // shared_data->ready_queue.sort(Process::PpComparator::operator());    //TODO waiting on response from Marrinan on what to do here
-            lock.unlock();
+            // lock.lock();
+                shared_data->ready_queue.sort(PpComparator());    //TODO waiting on response from Marrinan on what to do here
+            // lock.unlock();
+
             //sort based on priority
         }
         else if(shared_data->algorithm == ScheduleAlgorithm::SJF)
         {
             std::cout << "sjf scheduling" << std::endl;
+            // lock.lock();
+                shared_data->ready_queue.sort(SjfComparator());    //TODO waiting on response from Marrinan on what to do here
+            // lock.unlock();
+
             //sort based on SJF ordering
         }
 
-        std::cout << "got to lock" << std::endl;
-
         // determine if all processes are in the terminated state
-        lock.lock();    //TODO there's an error here somewhere
+        lock.lock();
             shared_data->all_terminated = true;
 
             for(size_t i = 0;i < processes.size();i++)
@@ -146,8 +149,6 @@ int main(int argc, char **argv)
 
         // sleep 1/60th of a second
         usleep(16667);
-
-        std::cout << "loop end\n";
     }
 
 
@@ -174,7 +175,16 @@ int main(int argc, char **argv)
 }
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
-{//TODO start on writing this
+{
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+
+    while(1)
+    {
+        lock.lock();
+            if(shared_data->all_terminated)
+                break;
+        lock.unlock();
+    }
     // Work to be done by each core idependent of the other cores
     //  - Get process at front of ready queue
     //  - Simulate the processes running until one of the following:

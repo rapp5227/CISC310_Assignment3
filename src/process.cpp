@@ -125,5 +125,5 @@ bool PpComparator::operator ()(const Process* p1, const Process* p2)
     int val1 = p1->getPriority();
     int val2 = p2->getPriority();
 
-    return false; // change this!
+    return val1 < val2; // change this!
 }

@@ -1,5 +1,5 @@
 CXX= g++
-CXXFLAGS= -std=c++11 -D_VARIADIC_MAX=10
+CXXFLAGS= -std=c++11 -D_VARIADIC_MAX=10 -Wall
 
 INCLUDE= -I./include
 LIB= -lpthread
