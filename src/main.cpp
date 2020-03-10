@@ -91,14 +91,29 @@ int main(int argc, char **argv)
             if(processes[i]->getStartTime() <= elapsedTime && processes[i]->getState() == Process::NotStarted)
             {
                 lock.lock();
-                    shared_data->ready_queue.push_back(processes[i]);
+                    shared_data->ready_queue.push_back(processes[i]);   //starts processes that haven't been started
                 lock.unlock();
-            }
+
+                processes[i]->setState(Process::State::Ready,currentTime());    //starts process and initializes its launch time
+            }  
         }
 
         // determine when an I/O burst finishes and put the process back in the ready queue
 
         // sort the ready queue (if needed - based on scheduling algorithm)
+        if(shared_data->algorithm == ScheduleAlgorithm::PP)
+        {
+            std::cout << "priority scheduling" << std::endl;
+            lock.lock();
+                shared_data->ready_queue.sort(Process::PpComparator::operator());
+            lock.unlock();
+            //sort based on priority
+        }
+        else if(shared_data->algorithm == ScheduleAlgorithm::SJF)
+        {
+            std::cout << "sjf scheduling" << std::endl;
+            //sort based on SJF ordering
+        }
 
         // determine if all processes are in the terminated state
         lock.lock();    //TODO there's an error here somewhere
