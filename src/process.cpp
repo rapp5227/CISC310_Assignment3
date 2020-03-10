@@ -80,6 +80,10 @@ double Process::getRemainingTime() const
     return (double)remain_time / 1000.0;
 }
 
+uint32_t Process::getPullTime() const
+{
+    return pull_time;
+}
 void Process::setState(State new_state, uint32_t current_time)
 {
     if (state == State::NotStarted && new_state == State::Ready)

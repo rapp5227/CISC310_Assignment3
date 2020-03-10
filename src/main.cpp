@@ -18,6 +18,7 @@ typedef struct SchedulerData {
     uint32_t context_switch;
     uint32_t time_slice;
     std::list<Process*> ready_queue;
+    std::list<Process*> io_queue;
     bool all_terminated;
 } SchedulerData;
 
@@ -41,7 +42,10 @@ int main(int argc, char **argv)
     SchedulerData *shared_data;
     std::vector<Process*> processes;
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
-
+    std::cout << "lock owns mutex: " << lock.owns_lock() << std::endl;
+    lock.try_lock();
+    std::cout << "lock owns mutex: " << lock.owns_lock() << std::endl;
+    lock.unlock();
     // read configuration file for scheduling simulation
     SchedulerConfig *config = readConfigFile(argv[1]);
 
@@ -91,6 +95,7 @@ int main(int argc, char **argv)
             if(processes[i]->getStartTime() <= elapsedTime && processes[i]->getState() == Process::NotStarted)
             {
                 lock.lock();
+                    std::cout << "entered lock\n";
                     shared_data->ready_queue.push_back(processes[i]);   //starts processes that haven't been started
                 lock.unlock();
 
@@ -98,14 +103,25 @@ int main(int argc, char **argv)
             }  
         }
 
+        std::cout << "io queue iterator" << std::endl;
+
         // determine when an I/O burst finishes and put the process back in the ready queue
+        // lock.lock();
+            std::cout << "entered lock" << std::endl;
+            for(std::list<Process*>::iterator it = shared_data->io_queue.begin(); it != shared_data->io_queue.end();++it)
+            {
+                //test whether element is done with IO and move to ready if so
+            }
+        // lock.unlock();
+
+        std::cout << "io queue terminated" << std::endl;
 
         // sort the ready queue (if needed - based on scheduling algorithm)
         if(shared_data->algorithm == ScheduleAlgorithm::PP)
         {
             std::cout << "priority scheduling" << std::endl;
             lock.lock();
-                shared_data->ready_queue.sort(Process::PpComparator::operator());
+                // shared_data->ready_queue.sort(Process::PpComparator::operator());    //TODO waiting on response from Marrinan on what to do here
             lock.unlock();
             //sort based on priority
         }
@@ -114,6 +130,8 @@ int main(int argc, char **argv)
             std::cout << "sjf scheduling" << std::endl;
             //sort based on SJF ordering
         }
+
+        std::cout << "got to lock" << std::endl;
 
         // determine if all processes are in the terminated state
         lock.lock();    //TODO there's an error here somewhere
