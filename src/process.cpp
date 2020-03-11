@@ -28,6 +28,8 @@ Process::Process(ProcessDetails details, uint32_t current_time)
     {
         remain_time += burst_times[i];
     }
+
+    pull_time = current_time;
 }
 
 Process::~Process()
@@ -84,6 +86,7 @@ uint32_t Process::getPullTime() const
 {
     return pull_time;
 }
+
 void Process::setState(State new_state, uint32_t current_time)
 {
     if (state == State::NotStarted && new_state == State::Ready)
@@ -100,6 +103,24 @@ void Process::setCpuCore(int8_t core_num)
 
 void Process::updateProcess(uint32_t current_time)
 {
+    uint32_t time_update = current_time - pull_time;
+
+    cpu_time += time_update;                    //adds time of cpu burst to total cpu time
+    remain_time -= time_update;                 //reduces remaining time
+    turn_time = launch_time - current_time;     //updates turnaround time
+    burst_times[current_burst] -= time_update;
+
+    if(burst_times[current_burst] <= 0)
+    {
+        current_burst++;
+
+        if(current_burst > num_bursts)  //end of the array
+            setState(Process::State::Terminated,0);
+
+        else
+            setState(Process::State::IO,0);
+    }
+    pull_time = current_time;
     // use `current_time` to update turnaround time, wait time, burst times, 
     // cpu time, and remaining time
 }
@@ -126,4 +147,17 @@ bool PpComparator::operator ()(const Process* p1, const Process* p2)
     int val2 = p2->getPriority();
 
     return val1 < val2; // change this!
+}
+
+uint32_t Process::currentBurstRemaining() const
+{
+    return burst_times[current_burst];
+}
+
+void Process::pull(uint32_t current_time,uint8_t core)
+{
+    wait_time += (current_time - pull_time);
+    pull_time = current_time;
+    setState(Process::State::Running,0);
+    core = core;
 }

@@ -19,6 +19,7 @@ typedef struct SchedulerData {
     uint32_t time_slice;
     std::list<Process*> ready_queue;
     std::list<Process*> io_queue;
+    std::list<Process*> terminated_queue;
     bool all_terminated;
 } SchedulerData;
 
@@ -162,7 +163,8 @@ int main(int argc, char **argv)
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
-    Process* process;
+    Process* process = NULL;
+    uint32_t event_time;
 
     while(1)
     {
@@ -170,9 +172,19 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             if(shared_data->all_terminated)
                 break;
 
-            process = shared_data->ready_queue.front(); //remove first item from ready queue
-            shared_data->ready_queue.pop_front();
+            if(shared_data->ready_queue.front() != NULL)
+            {
+                process = shared_data->ready_queue.front(); //remove first item from ready queue
+                shared_data->ready_queue.pop_front();
+            }
+
         lock.unlock();
+
+        if(process == NULL)
+            continue;
+
+        event_time = currentTime();
+        process->pull(event_time,core_id);
 
         switch(shared_data->algorithm)
         {
@@ -184,7 +196,16 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
             case(ScheduleAlgorithm::SJF):
             {
-                std::cout << "SJF" << std::endl;
+                while(currentTime() - event_time < process->currentBurstRemaining()){}    //waits for burst to end
+                lock.lock();
+                    process->updateProcess(currentTime());
+
+                    if(process->getState() == Process::State::Terminated)
+                        shared_data->terminated_queue.push_back(process);
+
+                    else if (process->getState() == Process::State::IO)
+                        shared_data->io_queue.push_back(process);
+                lock.unlock();
                 break;
             }
 
@@ -200,7 +221,12 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             }
         }
 
-        break;
+        process = NULL;
+        event_time = currentTime();
+
+        while(currentTime() - event_time < shared_data->context_switch){} //context switch wait time
+
+        //  TODO allowing this loop to reiterate causes a weird error
     }
     // Work to be done by each core idependent of the other cores
     //  - Get process at front of ready queue
