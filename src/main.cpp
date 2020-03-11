@@ -41,8 +41,6 @@ int main(int argc, char **argv)
     int i;
     SchedulerData *shared_data;
     std::vector<Process*> processes;
-    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
-
     // read configuration file for scheduling simulation
     SchedulerConfig *config = readConfigFile(argv[1]);
 
@@ -53,6 +51,8 @@ int main(int argc, char **argv)
     shared_data->context_switch = config->context_switch;
     shared_data->time_slice = config->time_slice;
     shared_data->all_terminated = false;
+
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
 
     // create processes
     uint32_t start = currentTime();
@@ -81,59 +81,44 @@ int main(int argc, char **argv)
 
     while (!(shared_data->all_terminated))
     {
+        uint32_t elapsedTime = currentTime() - start;
+
         // clear output from previous iteration
         clearOutput(num_lines);
 
         // start new processes at their appropriate start time
-        uint32_t elapsedTime = currentTime() - start;
-
         for(size_t i = 0;i < processes.size();i++)
         {
             if(processes[i]->getStartTime() <= elapsedTime && processes[i]->getState() == Process::NotStarted)
             {
-                std::cout << "lock test: " << lock.owns_lock() << std::endl;
                 lock.lock();
-                    std::cout << "entered lock\n";
                     shared_data->ready_queue.push_back(processes[i]);   //starts processes that haven't been started
                 lock.unlock();
 
                 processes[i]->setState(Process::State::Ready,currentTime());    //starts process and initializes its launch time
             }  
         }
-
-        std::cout << "io queue iterator" << std::endl;
-
         // determine when an I/O burst finishes and put the process back in the ready queue
-
-        // lock.lock();
-            std::cout << "entered lock" << std::endl;
+        lock.lock();
             for(std::list<Process*>::iterator it = shared_data->io_queue.begin(); it != shared_data->io_queue.end();++it)
             {
                 //test whether element is done with IO and move to ready if so
                 //change process state
             }
-        // lock.unlock();
-
-        std::cout << "io queue terminated" << std::endl;
+        lock.unlock();
 
         // sort the ready queue (if needed - based on scheduling algorithm)
         if(shared_data->algorithm == ScheduleAlgorithm::PP)
         {
-            std::cout << "priority scheduling" << std::endl;
-            // lock.lock();
+            lock.lock();
                 shared_data->ready_queue.sort(PpComparator());    //TODO waiting on response from Marrinan on what to do here
-            // lock.unlock();
-
-            //sort based on priority
+            lock.unlock();
         }
         else if(shared_data->algorithm == ScheduleAlgorithm::SJF)
         {
-            std::cout << "sjf scheduling" << std::endl;
-            // lock.lock();
+            lock.lock();
                 shared_data->ready_queue.sort(SjfComparator());    //TODO waiting on response from Marrinan on what to do here
-            // lock.unlock();
-
-            //sort based on SJF ordering
+            lock.unlock();
         }
 
         // determine if all processes are in the terminated state
@@ -177,13 +162,45 @@ int main(int argc, char **argv)
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+    Process* process;
 
     while(1)
     {
         lock.lock();
             if(shared_data->all_terminated)
                 break;
+
+            process = shared_data->ready_queue.front(); //remove first item from ready queue
+            shared_data->ready_queue.pop_front();
         lock.unlock();
+
+        switch(shared_data->algorithm)
+        {
+            case(ScheduleAlgorithm::FCFS):
+            {
+                std::cout << "FCFS" << std::endl;
+                break;
+            }
+
+            case(ScheduleAlgorithm::SJF):
+            {
+                std::cout << "SJF" << std::endl;
+                break;
+            }
+
+            case(ScheduleAlgorithm::RR):
+            {
+                std::cout << "RR" << std::endl;
+                break;
+            }
+            case(ScheduleAlgorithm::PP):
+            {
+                std::cout << "PP" << std::endl;
+                break;          
+            }
+        }
+
+        break;
     }
     // Work to be done by each core idependent of the other cores
     //  - Get process at front of ready queue
