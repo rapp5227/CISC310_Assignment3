@@ -29,7 +29,7 @@ Process::Process(ProcessDetails details, uint32_t current_time)
         remain_time += burst_times[i];
     }
 
-    pull_time = current_time;
+    switch_time = current_time;
 }
 
 Process::~Process()
@@ -82,9 +82,9 @@ double Process::getRemainingTime() const
     return (double)remain_time / 1000.0;
 }
 
-uint32_t Process::getPullTime() const
+uint32_t Process::getSwitchTime() const
 {
-    return pull_time;
+    return switch_time;
 }
 
 void Process::setState(State new_state, uint32_t current_time)
@@ -103,7 +103,7 @@ void Process::setCpuCore(int8_t core_num)
 
 void Process::updateProcess(uint32_t current_time)
 {
-    uint32_t time_update = current_time - pull_time;
+    uint32_t time_update = current_time - switch_time;
 
     cpu_time += time_update;                    //adds time of cpu burst to total cpu time
     remain_time -= time_update;                 //reduces remaining time
@@ -120,7 +120,7 @@ void Process::updateProcess(uint32_t current_time)
         else
             setState(Process::State::IO,0);
     }
-    pull_time = current_time;
+    switch_time = current_time;
     // use `current_time` to update turnaround time, wait time, burst times, 
     // cpu time, and remaining time
 }
@@ -156,8 +156,8 @@ uint32_t Process::currentBurstRemaining() const
 
 void Process::pull(uint32_t current_time,uint8_t core)
 {
-    wait_time += (current_time - pull_time);
-    pull_time = current_time;
+    wait_time += (current_time - switch_time);
+    switch_time = current_time;
     setState(Process::State::Running,0);
     core = core;
 }

@@ -144,6 +144,7 @@ int main(int argc, char **argv)
         schedule_threads[i].join();
     }
 
+    //TODO need to track these statistics somehow
     // print final statistics
     //  - CPU utilization
     //  - Throughput
@@ -162,6 +163,7 @@ int main(int argc, char **argv)
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
+    //TODO does not remove processes from the IO queue yet
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
     Process* process = NULL;
     uint32_t event_time;
