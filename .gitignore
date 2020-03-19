@@ -1,0 +1,4 @@
+bin/*
+obj/*
+git_token
+osscheduler.log

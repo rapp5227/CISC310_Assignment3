@@ -10,6 +10,9 @@
 #include "configreader.h"
 #include "process.h"
 
+#include <cstdio>
+#include <fstream>  //TODO testing
+
 // Shared data for all cores
 typedef struct SchedulerData {
     std::mutex mutex;
@@ -21,6 +24,7 @@ typedef struct SchedulerData {
     std::list<Process*> io_queue;
     std::list<Process*> terminated_queue;
     bool all_terminated;
+    std::ofstream log_file; //TODO delete
 } SchedulerData;
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *data);
@@ -28,6 +32,7 @@ int printProcessOutput(std::vector<Process*>& processes, std::mutex& mutex);
 void clearOutput(int num_lines);
 uint32_t currentTime();
 std::string processStateToString(Process::State state);
+void sort(SchedulerData *shared_data);
 
 int main(int argc, char **argv)
 {
@@ -54,10 +59,17 @@ int main(int argc, char **argv)
     shared_data->all_terminated = false;
 
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+   
+    {//TODO delete this scope
+        remove("osscheduler.log");
+        shared_data->log_file.open("osscheduler.log");
+        shared_data->log_file << "Beginning test" << std::endl;
+    }
 
     // create processes
-    uint32_t start = currentTime();
-    for (i = 0; i < config->num_processes; i++)
+    uint32_t start = currentTime(); // start is the beginning of total time tracking
+
+    for (i = 0; i < config->num_processes; i++) // populate ready queue
     {
         Process *p = new Process(config->processes[i], start);
         processes.push_back(p);
@@ -70,6 +82,8 @@ int main(int argc, char **argv)
     // free configuration data from memory
     deleteConfig(config);
 
+    sort(shared_data);  // sorts the ready queue if necessary
+
     // launch 1 scheduling thread per cpu core
     std::thread *schedule_threads = new std::thread[num_cores];
     for (i = 0; i < num_cores; i++)
@@ -80,7 +94,7 @@ int main(int argc, char **argv)
     // main thread work goes here:
     int num_lines = 0;
 
-    while (!(shared_data->all_terminated))
+    while (!(shared_data->all_terminated))  // main scheduler thread work
     {
         uint32_t elapsedTime = currentTime() - start;
 
@@ -109,18 +123,7 @@ int main(int argc, char **argv)
         lock.unlock();
 
         // sort the ready queue (if needed - based on scheduling algorithm)
-        if(shared_data->algorithm == ScheduleAlgorithm::PP)
-        {
-            lock.lock();
-                shared_data->ready_queue.sort(PpComparator());    //TODO waiting on response from Marrinan on what to do here
-            lock.unlock();
-        }
-        else if(shared_data->algorithm == ScheduleAlgorithm::SJF)
-        {
-            lock.lock();
-                shared_data->ready_queue.sort(SjfComparator());    //TODO waiting on response from Marrinan on what to do here
-            lock.unlock();
-        }
+        sort(shared_data);
 
         // determine if all processes are in the terminated state
         lock.lock();
@@ -130,6 +133,7 @@ int main(int argc, char **argv)
                 if(processes[i]->getState() != Process::Terminated)
                     shared_data->all_terminated = false;
         lock.unlock();
+
         // output process status table
         num_lines = printProcessOutput(processes, shared_data->mutex);
 
@@ -174,7 +178,6 @@ int main(int argc, char **argv)
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
-    //TODO does not remove processes from the IO queue yet
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
     Process* process = NULL;
     uint32_t event_time;
@@ -187,13 +190,13 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
             if(shared_data->ready_queue.front() != NULL)
             {
-                process = shared_data->ready_queue.front(); //remove first item from ready queue
+                process = shared_data->ready_queue.front(); //take first item from ready queue
                 shared_data->ready_queue.pop_front();
             }
 
         lock.unlock();
 
-        if(process == NULL)
+        if(process == NULL) //jumps back to start of loop if process is null
             continue;
 
         event_time = currentTime();
@@ -209,6 +212,10 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
             case(ScheduleAlgorithm::SJF):
             {
+                lock.lock();
+                    shared_data->log_file << "CORE " << (int) core_id << ": process remaining time= " << process->currentBurstRemaining() << std::endl; //TODO delete
+                lock.unlock();
+
                 while(currentTime() - event_time < process->currentBurstRemaining()){}    //waits for burst to end
                 lock.lock();
                     process->updateProcess(currentTime());
@@ -331,4 +338,22 @@ std::string processStateToString(Process::State state)
             break;
     }
     return str;
+}
+
+void sort(SchedulerData *shared_data)
+{// tests whether ready queue must be sorted, then performs the sort if needed
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+
+    if(shared_data->algorithm == ScheduleAlgorithm::PP)
+    {
+        lock.lock();
+            shared_data->ready_queue.sort(PpComparator());
+        lock.unlock();
+    }
+    else if(shared_data->algorithm == ScheduleAlgorithm::SJF)
+    {
+        lock.lock();
+            shared_data->ready_queue.sort(SjfComparator());
+        lock.unlock();
+    }
 }
