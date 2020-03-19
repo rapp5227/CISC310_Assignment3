@@ -40,6 +40,7 @@ public:
     double getCpuTime() const;
     double getRemainingTime() const;
     uint32_t getSwitchTime() const;
+    uint32_t getRemainingTimeLong() const;
 
     void setState(State new_state, uint32_t current_time);
     void setCpuCore(int8_t core_num);
@@ -47,8 +48,8 @@ public:
     void updateProcess(uint32_t current_time);
     void updateBurstTime(int burst_idx, uint32_t new_time);
 
-    uint32_t currentBurstRemaining() const; //returns remaining time on current burst
-    void pull(uint32_t time,uint8_t core);    //updates pull time
+    uint32_t currentBurstRemaining() const;     //returns remaining time on current burst
+    void pull(uint32_t time,uint8_t core);      //updates pull time
 };
 
 // Comparators: used in std::list sort() method

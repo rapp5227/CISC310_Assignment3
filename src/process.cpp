@@ -87,6 +87,11 @@ uint32_t Process::getSwitchTime() const
     return switch_time;
 }
 
+uint32_t Process::getRemainingTimeLong() const
+{
+    return remain_time;
+}
+
 void Process::setState(State new_state, uint32_t current_time)
 {
     if (state == State::NotStarted && new_state == State::Ready)
@@ -102,12 +107,13 @@ void Process::setCpuCore(int8_t core_num)
 }
 
 void Process::updateProcess(uint32_t current_time)
-{
+{//TODO need to update wait time
+    
     uint32_t time_update = current_time - switch_time;
 
     cpu_time += time_update;                    //adds time of cpu burst to total cpu time
     remain_time -= time_update;                 //reduces remaining time
-    turn_time = launch_time - current_time;     //updates turnaround time
+    turn_time = current_time - launch_time;     //updates turnaround time
     burst_times[current_burst] -= time_update;
 
     if(burst_times[current_burst] <= 0)
@@ -137,7 +143,7 @@ void Process::updateBurstTime(int burst_idx, uint32_t new_time)
 // SJF - comparator for sorting read queue based on shortest remaining CPU time
 bool SjfComparator::operator ()(const Process *p1, const Process *p2)
 {
-    return false; // change this!
+    return p1->getRemainingTimeLong() < p2->getRemainingTimeLong();
 }
 
 // PP - comparator for sorting read queue based on priority

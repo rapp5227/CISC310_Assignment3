@@ -24,6 +24,7 @@ typedef struct SchedulerData {
     std::list<Process*> io_queue;
     std::list<Process*> terminated_queue;
     bool all_terminated;
+    std::ofstream log_file; //TODO delete
 } SchedulerData;
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *data);
@@ -60,12 +61,11 @@ int main(int argc, char **argv)
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
    
     {//TODO delete this scope
-        std::ofstream log_file; //used to independently track outputs without affecting print statements
-
         remove("osscheduler.log");
-        log_file.open("osscheduler.log");
-        log_file << "Beginning test" << std::endl;
+        shared_data->log_file.open("osscheduler.log");
+        shared_data->log_file << "Beginning test" << std::endl;
     }
+
     // create processes
     uint32_t start = currentTime(); // start is the beginning of total time tracking
 
@@ -167,7 +167,6 @@ int main(int argc, char **argv)
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
-    //TODO does not remove processes from the IO queue yet
     std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
     Process* process = NULL;
     uint32_t event_time;
@@ -202,6 +201,10 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
             case(ScheduleAlgorithm::SJF):
             {
+                lock.lock();
+                    shared_data->log_file << "CORE " << (int) core_id << ": process remaining time= " << process->currentBurstRemaining() << std::endl; //TODO delete
+                lock.unlock();
+
                 while(currentTime() - event_time < process->currentBurstRemaining()){}    //waits for burst to end
                 lock.lock();
                     process->updateProcess(currentTime());

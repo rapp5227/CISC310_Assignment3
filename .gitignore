@@ -1,4 +1,4 @@
 bin/*
 obj/*
-token
+git_token
 osscheduler.log
