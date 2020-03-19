@@ -12,6 +12,7 @@ Process::Process(ProcessDetails details, uint32_t current_time)
     for (i = 0; i < num_bursts; i++)
     {
         burst_times[i] = details.burst_times[i];
+        printf("burst_times[%d] = %d\n", i, burst_times[i]);
     }
     priority = details.priority;
     state = (start_time == 0) ? State::Ready : State::NotStarted;

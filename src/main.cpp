@@ -153,7 +153,18 @@ int main(int argc, char **argv)
     //     - Overall average
     //  - Average turnaround time
     //  - Average waiting time
+    int totalTurnaroundTime = 0;
+    int totalWaitingTime = 0;
+    for (int i = 0; i < processes.size(); i++)
+    {
+        totalTurnaroundTime += processes[i]->getTurnaroundTime();
+        totalWaitingTime += processes[i]->getWaitTime();
+    }
 
+    double avgTurnaroundTime = totalTurnaroundTime / processes.size();
+    double avgWaitingTime = totalWaitingTime / processes.size();
+
+    printf("\taverage turnaround time: %lf\n\taverage waiting time: %lf\n", avgTurnaroundTime, avgWaitingTime);
 
     // Clean up before quitting program
     processes.clear();
@@ -207,6 +218,10 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
                     else if (process->getState() == Process::State::IO)
                         shared_data->io_queue.push_back(process);
+
+                    else if (process->getState() == Process::State::Ready)
+                        shared_data->ready_queue.push_back(process);
+
                 lock.unlock();
                 break;
             }
