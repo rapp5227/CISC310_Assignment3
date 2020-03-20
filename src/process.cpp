@@ -29,7 +29,7 @@ Process::Process(ProcessDetails details, uint32_t current_time)
         remain_time += burst_times[i];
     }
 
-    pull_time = current_time;
+    switch_time = current_time;
 }
 
 Process::~Process()
@@ -79,12 +79,17 @@ double Process::getCpuTime() const
 
 double Process::getRemainingTime() const
 {
-    return (double)remain_time / 1000.0;
+    return (double)(remain_time - cpu_time) / 1000.0;
 }
 
-uint32_t Process::getPullTime() const
+uint32_t Process::getSwitchTime() const
 {
-    return pull_time;
+    return switch_time;
+}
+
+uint32_t Process::getRemainingTimeLong() const
+{
+    return remain_time;
 }
 
 void Process::setState(State new_state, uint32_t current_time)
@@ -92,7 +97,9 @@ void Process::setState(State new_state, uint32_t current_time)
     if (state == State::NotStarted && new_state == State::Ready)
     {
         launch_time = current_time;
+        switch_time = current_time;
     }
+
     state = new_state;
 }
 
@@ -101,28 +108,83 @@ void Process::setCpuCore(int8_t core_num)
     core = core_num;
 }
 
-void Process::updateProcess(uint32_t current_time)
+void Process::updateProcess(uint32_t current_time,int8_t core)
 {
-    uint32_t time_update = current_time - pull_time;
+    turn_time = current_time - launch_time;
 
-    cpu_time += time_update;                    //adds time of cpu burst to total cpu time
-    remain_time -= time_update;                 //reduces remaining time
-    turn_time = launch_time - current_time;     //updates turnaround time
-    burst_times[current_burst] -= time_update;
+    if(state == Process::State::Running)
+    {
+        stopRunning(current_time);
+    }
+
+    else if(state == Process::State::IO)
+    {
+        stopIO(current_time);
+    }
+
+    else if (state == Process::State::Ready)
+    {
+        startRunning(current_time,core);
+    }
+
+    switch_time = current_time;
+
+    // cpu_time += time_update;                    //adds time of cpu burst to total cpu time
+    // remain_time -= time_update;                 //reduces remaining time
+    // turn_time = current_time - launch_time;     //updates turnaround time
+    // burst_times[current_burst] -= time_update;
+
+    // if(burst_times[current_burst] <= 0)
+    // {
+    //     current_burst++;
+
+    //     if(current_burst > num_bursts)  //end of the array
+    //         setState(Process::State::Terminated);
+
+    //     else
+    //         setState(Process::State::IO);
+    // }
+    // use `current_time` to update turnaround time, wait time, burst times, 
+    // cpu time, and remaining time
+}
+
+void Process::startRunning(uint32_t current_time,int8_t new_core)
+{
+    core = new_core;
+
+    wait_time += (current_time - switch_time);
+
+    setState(Process::State::Running);
+}
+
+void Process::stopRunning(uint32_t current_time)
+{
+    core = -1;
+
+    cpu_time += (current_time - switch_time);
+
+    burst_times[current_burst] -= (current_time - switch_time);
 
     if(burst_times[current_burst] <= 0)
     {
         current_burst++;
 
-        if(current_burst > num_bursts)  //end of the array
-            setState(Process::State::Terminated,0);
+        setState(Process::State::IO);
 
-        else
-            setState(Process::State::IO,0);
+        if(current_burst >= num_bursts)
+            setState(Process::State::Terminated);
     }
-    pull_time = current_time;
-    // use `current_time` to update turnaround time, wait time, burst times, 
-    // cpu time, and remaining time
+
+    else
+    {
+        setState(Process::State::Ready);
+    }
+}
+
+void Process::stopIO(uint32_t current_time)
+{
+    current_burst++;
+    setState(Process::State::Ready);
 }
 
 void Process::updateBurstTime(int burst_idx, uint32_t new_time)
@@ -137,16 +199,13 @@ void Process::updateBurstTime(int burst_idx, uint32_t new_time)
 // SJF - comparator for sorting read queue based on shortest remaining CPU time
 bool SjfComparator::operator ()(const Process *p1, const Process *p2)
 {
-    return false; // change this!
+    return p1->getRemainingTime() < p2->getRemainingTime();
 }
 
 // PP - comparator for sorting read queue based on priority
 bool PpComparator::operator ()(const Process* p1, const Process* p2)
 {
-    int val1 = p1->getPriority();
-    int val2 = p2->getPriority();
-
-    return val1 < val2; // change this!
+    return p1->getPriority() < p2->getPriority();
 }
 
 uint32_t Process::currentBurstRemaining() const
@@ -156,8 +215,8 @@ uint32_t Process::currentBurstRemaining() const
 
 void Process::pull(uint32_t current_time,uint8_t core)
 {
-    wait_time += (current_time - pull_time);
-    pull_time = current_time;
-    setState(Process::State::Running,0);
+    wait_time += (current_time - switch_time);
+    switch_time = current_time;
+    setState(Process::State::Running);
     core = core;
 }

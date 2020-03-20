@@ -22,7 +22,7 @@ private:
     int32_t     cpu_time;           // total time spent running on a CPU core
     int32_t     remain_time;        // CPU time remaining until terminated
     uint32_t    launch_time;        // actual time in ms (since epoch) that process was 'launched'
-    uint32_t    pull_time;          //actual time process was pulled onto this core
+    uint32_t    switch_time;        // time that process switched from IO to CPU, or vice versa
     // you are welcome to add other private data fields here (e.g. actual time process was put in 
     // ready queue or i/o queue)
 
@@ -39,16 +39,21 @@ public:
     double getWaitTime() const;
     double getCpuTime() const;
     double getRemainingTime() const;
-    uint32_t getPullTime() const;
+    uint32_t getSwitchTime() const;
+    uint32_t getRemainingTimeLong() const;
 
-    void setState(State new_state, uint32_t current_time);
+    void setState(State new_state, uint32_t current_time = 0);  // current time only needs a value when launching process
     void setCpuCore(int8_t core_num);
 
-    void updateProcess(uint32_t current_time);
+    void updateProcess(uint32_t current_time,int8_t core);
     void updateBurstTime(int burst_idx, uint32_t new_time);
 
-    uint32_t currentBurstRemaining() const; //returns remaining time on current burst
-    void pull(uint32_t time,uint8_t core);    //updates pull time
+    uint32_t currentBurstRemaining() const;     //returns remaining time on current burst
+    void pull(uint32_t time,uint8_t core);      //updates pull time
+
+    void startRunning(uint32_t current_time,int8_t core);
+    void stopRunning(uint32_t current_time);
+    void stopIO(uint32_t current_time);          //moves process from IO to ready queue
 };
 
 // Comparators: used in std::list sort() method
