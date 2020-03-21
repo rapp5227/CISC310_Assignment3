@@ -179,11 +179,11 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
     uint32_t total_wait = 0;
 
     uint32_t idle_start;
-    uint32_t idle_end;
 
     idle_start = currentTime();
     while(!done)
     {
+        idle_start = currentTime();
 
         lock.lock();
             done = shared_data->all_terminated;
@@ -198,14 +198,9 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
         if(process == NULL) //jumps back to start of loop if process is null
         {
-            idle_end = currentTime();
+            total_wait += (currentTime() - idle_start);
             continue;
         }
-
-        total_wait += (idle_end - idle_start);
-
-        idle_start = 0;
-        idle_end = 0;
 
         event_time = currentTime();
         process->updateProcess(event_time,core_id);
@@ -300,15 +295,15 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         total_wait += shared_data->context_switch;
     }
 
-    total_wait += (idle_end - idle_start);
+    total_wait += (currentTime() - idle_start);
 
     uint32_t total_time = currentTime() - start_time;
 
-    double util = (double) (((double) total_wait) / ((double) total_wait));
+    double util = (double) (((double) total_wait) / ((double) total_time));
 
     std::cout << "CORE: " << util << std::endl;
 
-    util = 100.0 - util;
+    util = (1.0 - util) * 100.0;
 
     lock.lock();
         shared_data->cpu_utils.push_back(util);
