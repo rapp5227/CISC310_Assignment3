@@ -21,6 +21,7 @@ typedef struct SchedulerData {
     std::list<Process*> io_queue;
     std::list<Process*> terminated_queue;
     bool all_terminated;
+    std::vector<double> cpu_utils;
 } SchedulerData;
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *data);
@@ -174,8 +175,16 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
     bool done = false;
 
+    uint32_t start_time = currentTime();
+    uint32_t total_wait = 0;
+
+    uint32_t idle_start;
+    uint32_t idle_end;
+
+    idle_start = currentTime();
     while(!done)
     {
+
         lock.lock();
             done = shared_data->all_terminated;
 
@@ -188,7 +197,15 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         lock.unlock();
 
         if(process == NULL) //jumps back to start of loop if process is null
+        {
+            idle_end = currentTime();
             continue;
+        }
+
+        total_wait += (idle_end - idle_start);
+
+        idle_start = 0;
+        idle_end = 0;
 
         event_time = currentTime();
         process->updateProcess(event_time,core_id);
@@ -279,8 +296,23 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
         event_time = currentTime();
 
         while(currentTime() - event_time < shared_data->context_switch){} //context switch wait time
+
+        total_wait += shared_data->context_switch;
     }
 
+    total_wait += (idle_end - idle_start);
+
+    uint32_t total_time = currentTime() - start_time;
+
+    double util = (double) (((double) total_wait) / ((double) total_wait));
+
+    std::cout << "CORE: " << util << std::endl;
+
+    util = 100.0 - util;
+
+    lock.lock();
+        shared_data->cpu_utils.push_back(util);
+    lock.unlock();
     // Work to be done by each core idependent of the other cores
     //  - Get process at front of ready queue
     //  - Simulate the processes running until one of the following:
@@ -427,4 +459,11 @@ void printStats(SchedulerData* shared_data,std::vector<Process*> processes)
 
     printf("\taverage turnaround time: %lf\n\taverage waiting time: %lf\n", avgTurnaroundTime, avgWaitingTime);
 
+    double total_util = 0;
+    for(int i = 0;i < shared_data->cpu_utils.size();i++)
+    {
+        total_util += shared_data->cpu_utils[i];
+    }
+
+    std::cout << "total cpu utilization: " << (double) total_util << "%" << std::endl;
 }
