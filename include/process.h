@@ -9,19 +9,20 @@ public:
     enum State : uint8_t {NotStarted, Ready, Running, IO, Terminated};
 
 private:
-    uint16_t pid;             // process ID
-    uint32_t start_time;      // ms after program starts that process should be 'launched'
-    uint16_t num_bursts;      // number of CPU/IO bursts
-    uint16_t current_burst;   // current index into the CPU/IO burst array
-    uint32_t *burst_times;    // CPU/IO burst array of times (in ms)
-    uint8_t priority;         // process priority (0-4)
-    State state;              // process state
-    int8_t core;              // CPU core currently running on
-    int32_t turn_time;        // total time since 'launch' (until terminated)
-    int32_t wait_time;        // total time spent in ready queue
-    int32_t cpu_time;         // total time spent running on a CPU core
-    int32_t remain_time;      // CPU time remaining until terminated
-    uint32_t launch_time;     // actual time in ms (since epoch) that process was 'launched'
+    uint16_t    pid;                // process ID
+    uint32_t    start_time;         // ms after program starts that process should be 'launched'
+    uint16_t    num_bursts;         // number of CPU/IO bursts
+    uint16_t    current_burst;      // current index into the CPU/IO burst array
+    uint32_t*   burst_times;        // CPU/IO burst array of times (in ms)
+    uint8_t     priority;           // process priority (0-4)
+    State       state;              // process state
+    int8_t      core;               // CPU core currently running on
+    int32_t     turn_time;          // total time since 'launch' (until terminated)
+    int32_t     wait_time;          // total time spent in ready queue
+    int32_t     cpu_time;           // total time spent running on a CPU core
+    int32_t     remain_time;        // CPU time remaining until terminated
+    uint32_t    launch_time;        // actual time in ms (since epoch) that process was 'launched'
+    uint32_t    switch_time;        // time that process switched from IO to CPU, or vice versa
     // you are welcome to add other private data fields here (e.g. actual time process was put in 
     // ready queue or i/o queue)
 
@@ -29,21 +30,30 @@ public:
     Process(ProcessDetails details, uint32_t current_time);
     ~Process();
 
-    uint16_t getPid();
-    uint32_t getStartTime();
-    uint8_t getPriority();
-    State getState();
-    int8_t getCpuCore();
-    double getTurnaroundTime();
-    double getWaitTime();
-    double getCpuTime();
-    double getRemainingTime();
+    uint16_t getPid() const;
+    uint32_t getStartTime() const;
+    uint8_t getPriority() const;
+    State getState() const;
+    int8_t getCpuCore() const;
+    double getTurnaroundTime() const;
+    double getWaitTime() const;
+    double getCpuTime() const;
+    double getRemainingTime() const;
+    uint32_t getSwitchTime() const;
+    uint32_t getRemainingTimeLong() const;
 
-    void setState(State new_state, uint32_t current_time);
+    void setState(State new_state, uint32_t current_time = 0);  // current time only needs a value when launching process
     void setCpuCore(int8_t core_num);
 
-    void updateProcess(uint32_t current_time);
+    void updateProcess(uint32_t current_time,int8_t core);
     void updateBurstTime(int burst_idx, uint32_t new_time);
+
+    uint32_t currentBurstRemaining() const;     //returns remaining time on current burst
+    void pull(uint32_t time,uint8_t core);      //updates pull time
+
+    void startRunning(uint32_t current_time,int8_t core);
+    void stopRunning(uint32_t current_time);
+    void stopIO(uint32_t current_time);          //moves process from IO to ready queue
 };
 
 // Comparators: used in std::list sort() method

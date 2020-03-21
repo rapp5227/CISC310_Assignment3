@@ -18,7 +18,10 @@ typedef struct SchedulerData {
     uint32_t context_switch;
     uint32_t time_slice;
     std::list<Process*> ready_queue;
+    std::list<Process*> io_queue;
+    std::list<Process*> terminated_queue;
     bool all_terminated;
+    std::vector<double> cpu_utils;
 } SchedulerData;
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *data);
@@ -26,6 +29,8 @@ int printProcessOutput(std::vector<Process*>& processes, std::mutex& mutex);
 void clearOutput(int num_lines);
 uint32_t currentTime();
 std::string processStateToString(Process::State state);
+void sort(SchedulerData *shared_data);
+void printStats(SchedulerData* shared_data,std::vector<Process*> processes);
 
 int main(int argc, char **argv)
 {
@@ -40,7 +45,6 @@ int main(int argc, char **argv)
     int i;
     SchedulerData *shared_data;
     std::vector<Process*> processes;
-
     // read configuration file for scheduling simulation
     SchedulerConfig *config = readConfigFile(argv[1]);
 
@@ -52,9 +56,12 @@ int main(int argc, char **argv)
     shared_data->time_slice = config->time_slice;
     shared_data->all_terminated = false;
 
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+
     // create processes
-    uint32_t start = currentTime();
-    for (i = 0; i < config->num_processes; i++)
+    uint32_t start = currentTime(); // start is the beginning of total time tracking
+
+    for (i = 0; i < config->num_processes; i++) // populate ready queue
     {
         Process *p = new Process(config->processes[i], start);
         processes.push_back(p);
@@ -67,6 +74,8 @@ int main(int argc, char **argv)
     // free configuration data from memory
     deleteConfig(config);
 
+    sort(shared_data);  // sorts the ready queue if necessary
+
     // launch 1 scheduling thread per cpu core
     std::thread *schedule_threads = new std::thread[num_cores];
     for (i = 0; i < num_cores; i++)
@@ -76,18 +85,65 @@ int main(int argc, char **argv)
 
     // main thread work goes here:
     int num_lines = 0;
-    while (!(shared_data->all_terminated))
+
+    bool endFlag = false;
+
+    while (!endFlag)  // main scheduler thread work
     {
+        uint32_t elapsedTime = currentTime() - start;
+
         // clear output from previous iteration
         clearOutput(num_lines);
 
         // start new processes at their appropriate start time
+        for(size_t i = 0;i < processes.size();i++)
+        {
+            if(processes[i]->getStartTime() <= elapsedTime && processes[i]->getState() == Process::NotStarted)
+            {
+                lock.lock();
+                    shared_data->ready_queue.push_back(processes[i]);   //starts processes that haven't been started
+                lock.unlock();
 
+                processes[i]->setState(Process::State::Ready,currentTime());    //starts process and initializes its launch time
+            }  
+        }
         // determine when an I/O burst finishes and put the process back in the ready queue
+        if(shared_data->io_queue.size() > 0)
+        { 
+           lock.lock();
+                for(std::list<Process*>::iterator it = shared_data->io_queue.begin(); it != shared_data->io_queue.end();)
+                {
+                    if((currentTime() - (*it)->getSwitchTime()) >= (*it)->currentBurstRemaining())
+                    {
+                        (*it)->updateProcess(currentTime(),-1);
+
+                        shared_data->ready_queue.push_back((*it));
+                        it = shared_data->io_queue.erase(it);
+                    }
+
+                    else
+                        ++it;
+
+                    //test whether element is done with IO and move to ready if so
+                    //change process state
+                }
+            lock.unlock();
+        }
 
         // sort the ready queue (if needed - based on scheduling algorithm)
+        sort(shared_data);
 
         // determine if all processes are in the terminated state
+
+        endFlag = true;
+
+        for(size_t i = 0;i < processes.size();i++)
+            if(processes[i]->getState() != Process::Terminated)
+                endFlag = false;
+
+        lock.lock();
+           shared_data->all_terminated = endFlag;
+        lock.unlock();
 
         // output process status table
         num_lines = printProcessOutput(processes, shared_data->mutex);
@@ -96,22 +152,14 @@ int main(int argc, char **argv)
         usleep(16667);
     }
 
-
     // wait for threads to finish
     for (i = 0; i < num_cores; i++)
     {
         schedule_threads[i].join();
     }
 
-    // print final statistics
-    //  - CPU utilization
-    //  - Throughput
-    //     - Average for first 50% of processes finished
-    //     - Average for second 50% of processes finished
-    //     - Overall average
-    //  - Average turnaround time
-    //  - Average waiting time
-
+    //print statistics
+    printStats(shared_data,processes);
 
     // Clean up before quitting program
     processes.clear();
@@ -121,6 +169,150 @@ int main(int argc, char **argv)
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+    Process* process = NULL;
+    uint32_t event_time;
+
+    bool done = false;
+
+    uint32_t start_time = currentTime();
+    uint32_t total_wait = 0;
+
+    uint32_t idle_start;
+    uint32_t idle_end;
+
+    idle_start = currentTime();
+    while(!done)
+    {
+
+        lock.lock();
+            done = shared_data->all_terminated;
+
+            if(shared_data->ready_queue.front() != NULL)
+            {
+                process = shared_data->ready_queue.front(); //take first item from ready queue
+                shared_data->ready_queue.pop_front();
+            }
+
+        lock.unlock();
+
+        if(process == NULL) //jumps back to start of loop if process is null
+        {
+            idle_end = currentTime();
+            continue;
+        }
+
+        total_wait += (idle_end - idle_start);
+
+        idle_start = 0;
+        idle_end = 0;
+
+        event_time = currentTime();
+        process->updateProcess(event_time,core_id);
+
+        switch(shared_data->algorithm)
+        {
+            case(ScheduleAlgorithm::FCFS):
+            case(ScheduleAlgorithm::SJF):
+            {
+                while(currentTime() - event_time < process->currentBurstRemaining()){}    //waits for burst to end
+
+                lock.lock();
+                    process->updateProcess(currentTime(),core_id);
+
+                    if(process->getState() == Process::State::Terminated)
+                        shared_data->terminated_queue.push_back(process);
+
+                    else if (process->getState() == Process::State::IO)
+                        shared_data->io_queue.push_back(process);
+                lock.unlock();
+                break;
+            }
+
+            case(ScheduleAlgorithm::RR):
+            {
+                while(currentTime() - event_time < shared_data->time_slice && currentTime() - event_time < process->currentBurstRemaining()){}    //waits for burst to end
+
+                lock.lock();
+                    process->updateProcess(currentTime(),core_id);
+
+                    if(process->getState() == Process::State::Terminated)
+                        shared_data->terminated_queue.push_back(process);
+
+                    else if (process->getState() == Process::State::IO)
+                        shared_data->io_queue.push_back(process);
+
+                    else if (process->getState() == Process::State::Ready)
+                        shared_data->ready_queue.push_back(process);
+                lock.unlock();
+                break;
+            }//round robin case
+
+            case(ScheduleAlgorithm::PP):
+            {
+                while(process != NULL && currentTime() - event_time < process->currentBurstRemaining())
+                {
+                    lock.lock();
+                        if(shared_data->ready_queue.front() != NULL && shared_data->ready_queue.front()->getPriority() < process->getPriority())
+                        {
+                            process->updateProcess(currentTime(),core_id);
+
+                            if(process->getState() == Process::State::Terminated)
+                                shared_data->terminated_queue.push_back(process);
+
+                            else if (process->getState() == Process::State::IO)
+                                shared_data->io_queue.push_back(process);
+
+                            else if (process->getState() == Process::State::Ready)
+                                shared_data->ready_queue.push_back(process);
+
+                            process = NULL;
+                        }
+                    lock.unlock();
+                }    //waits for burst to end
+
+                if(process != NULL) //process was not preempted
+                {
+                    lock.lock();
+                        process->updateProcess(currentTime(),core_id);
+
+                        if(process->getState() == Process::State::Terminated)
+                            shared_data->terminated_queue.push_back(process);
+
+                        else if (process->getState() == Process::State::IO)
+                            shared_data->io_queue.push_back(process);
+
+                        else if (process->getState() == Process::State::Ready)
+                            shared_data->ready_queue.push_back(process);
+
+                    lock.unlock();  
+                }
+                
+                break;
+            }//priority case
+        }
+
+        process = NULL;
+        event_time = currentTime();
+
+        while(currentTime() - event_time < shared_data->context_switch){} //context switch wait time
+
+        total_wait += shared_data->context_switch;
+    }
+
+    total_wait += (idle_end - idle_start);
+
+    uint32_t total_time = currentTime() - start_time;
+
+    double util = (double) (((double) total_wait) / ((double) total_wait));
+
+    std::cout << "CORE: " << util << std::endl;
+
+    util = 100.0 - util;
+
+    lock.lock();
+        shared_data->cpu_utils.push_back(util);
+    lock.unlock();
     // Work to be done by each core idependent of the other cores
     //  - Get process at front of ready queue
     //  - Simulate the processes running until one of the following:
@@ -207,4 +399,71 @@ std::string processStateToString(Process::State state)
             break;
     }
     return str;
+}
+
+void sort(SchedulerData *shared_data)
+{// tests whether ready queue must be sorted, then performs the sort if needed
+    std::unique_lock<std::mutex> lock(shared_data->mutex,std::defer_lock);
+
+    if(shared_data->algorithm == ScheduleAlgorithm::PP)
+    {
+        lock.lock();
+            shared_data->ready_queue.sort(PpComparator());
+        lock.unlock();
+    }
+    else if(shared_data->algorithm == ScheduleAlgorithm::SJF)
+    {
+        lock.lock();
+            shared_data->ready_queue.sort(SjfComparator());
+        lock.unlock();
+    }
+}
+
+void printStats(SchedulerData* shared_data,std::vector<Process*> processes)
+{   
+
+    //  - CPU utilization
+
+    int totalTurnaroundTime = 0;
+    int totalWaitingTime = 0;
+    for (int i = 0; i < processes.size(); i++)
+    {
+        totalTurnaroundTime += processes[i]->getTurnaroundTime();
+        totalWaitingTime += processes[i]->getWaitTime();
+    }
+
+    double avgTurnaroundTime = totalTurnaroundTime / processes.size();
+    double avgWaitingTime = totalWaitingTime / processes.size();
+
+    int termSize = shared_data->terminated_queue.size();
+    int firstSplit = termSize / 2;
+    int secondSplit = termSize - firstSplit;
+
+    double firstTurn = 0.0;
+    double secondTurn = 0.0;
+
+    for(int i = 0;i < firstSplit;i++)
+    {
+        firstTurn += shared_data->terminated_queue.front()->getTurnaroundTime();
+        shared_data->terminated_queue.pop_front();
+    }
+
+    for(int i = secondSplit;i <= termSize;i++)
+    {
+        secondTurn += shared_data->terminated_queue.front()->getTurnaroundTime();
+        shared_data->terminated_queue.pop_front();
+    }
+
+    std::cout << "avg turnaround for first half: " << (firstTurn / (double) firstSplit) << std::endl;
+    std::cout << "avg turnaround for second half: " << (secondTurn / (double) secondSplit) << std::endl;
+
+    printf("\taverage turnaround time: %lf\n\taverage waiting time: %lf\n", avgTurnaroundTime, avgWaitingTime);
+
+    double total_util = 0;
+    for(int i = 0;i < shared_data->cpu_utils.size();i++)
+    {
+        total_util += shared_data->cpu_utils[i];
+    }
+
+    std::cout << "total cpu utilization: " << (double) total_util << "%" << std::endl;
 }
